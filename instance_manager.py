@@ -3,14 +3,16 @@ import threading
 import time
 from typing import Dict, Optional
 
-# 配置可用端口范围
+# Configure available port range
 BASE_PORT = 9000
 MAX_INSTANCES = 20
+
 
 class VLLMInstance:
     """
     Class representing a single vllm server instance.
     """
+
     def __init__(self, model_name: str, port: int, timeout: int = 600):
         self.model_name = model_name
         self.port = port
@@ -23,7 +25,7 @@ class VLLMInstance:
         """
         Start the vllm server as a subprocess on the specified port.
         """
-        # 启动 vllm OpenAI-Compatible Server
+        # Start vllm OpenAI-Compatible Server
         cmd = [
             'python', '-m', 'vllm.entrypoints.openai.api_server',
             '--model', self.model_name,
@@ -57,10 +59,12 @@ class VLLMInstance:
         """
         return (time.time() - self.last_active) > self.timeout
 
+
 class InstanceManager:
     """
     Class to manage all vllm server instances, including creation, deletion, and expiration.
     """
+
     def __init__(self):
         self.instances: Dict[str, VLLMInstance] = {}  # key: instance_id
         self.lock = threading.Lock()
@@ -133,4 +137,4 @@ class InstanceManager:
         with self.lock:
             expired = [iid for iid, inst in self.instances.items() if inst.is_expired()]
             for iid in expired:
-                self.delete_instance(iid) 
+                self.delete_instance(iid)

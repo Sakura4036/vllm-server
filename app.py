@@ -1,19 +1,20 @@
+import os
+import threading
+import time
+from argparse import ArgumentParser
 from flask import Flask, request, Response, jsonify
 from flask_restx import Api, Resource, fields
 from instance_manager import InstanceManager
-import threading
-import time
 from router import proxy_openai_request
-import os
 
-# 创建 Flask 应用和 Flask-RESTx API
+# Create Flask app and Flask-RESTx API
 app = Flask(__name__)
 api = Api(app, title='vLLM Instance Manager', version='1.0', description='Manage and deploy multiple vLLM model instances')
 
-# 初始化实例管理器
+# Initialize instance manager
 instance_manager = InstanceManager()
 
-# 定义用于序列化实例信息的模型
+# Define model for serializing instance info
 instance_model = api.model('Instance', {
     'model_name': fields.String(required=True, description='Model name'),
     'port': fields.Integer(required=True, description='Port number'),
@@ -22,11 +23,12 @@ instance_model = api.model('Instance', {
     'timeout': fields.Integer(required=True, description='Timeout in seconds')
 })
 
-# 定义用于创建实例的请求体模型
+# Define request body model for creating instance
 create_instance_model = api.model('CreateInstance', {
     'model_name': fields.String(required=True, description='Model name'),
     'timeout': fields.Integer(required=False, description='Timeout in seconds', default=600)
 })
+
 
 @api.route('/instances')
 class InstanceList(Resource):
@@ -51,15 +53,16 @@ class InstanceList(Resource):
             instance_id = instance_manager.create_instance(model_name, timeout)
             instance = instance_manager.get_instance(instance_id)
             return {
-                'instance_id': instance_id,
-                'model_name': instance.model_name,
-                'port': instance.port,
-                'status': instance.status,
-                'last_active': instance.last_active,
-                'timeout': instance.timeout
-            }, 201
+                       'instance_id': instance_id,
+                       'model_name': instance.model_name,
+                       'port': instance.port,
+                       'status': instance.status,
+                       'last_active': instance.last_active,
+                       'timeout': instance.timeout
+                   }, 201
         except Exception as e:
             return {'message': str(e)}, 500
+
 
 @api.route('/instances/<string:instance_id>')
 class Instance(Resource):
@@ -72,6 +75,7 @@ class Instance(Resource):
             return {'message': 'Instance not found'}, 404
         instance_manager.delete_instance(instance_id)
         return {'message': f'Instance {instance_id} deleted.'}, 200
+
 
 @api.route('/v1/chat/completions')
 class ChatCompletions(Resource):
@@ -86,16 +90,17 @@ class ChatCompletions(Resource):
             request_data=request.json,
             request_headers=request.headers
         )
-        # 处理流式响应
+        # Handle streaming response
         if isinstance(result, tuple) and callable(result[0]):
             generator, status, headers = result
             return Response(generator(), status=status, headers=dict(headers), content_type='application/json')
-        # 非流式响应
+        # Non-streaming response
         if isinstance(result, tuple):
             content, status, headers = result
             return Response(content, status=status, headers=dict(headers), content_type='application/json')
-        # 错误响应
+        # Error response
         return result
+
 
 @api.route('/v1/completions')
 class Completions(Resource):
@@ -110,16 +115,17 @@ class Completions(Resource):
             request_data=request.json,
             request_headers=request.headers
         )
-        # 处理流式响应
+        # Handle streaming response
         if isinstance(result, tuple) and callable(result[0]):
             generator, status, headers = result
             return Response(generator(), status=status, headers=dict(headers), content_type='application/json')
-        # 非流式响应
+        # Non-streaming response
         if isinstance(result, tuple):
             content, status, headers = result
             return Response(content, status=status, headers=dict(headers), content_type='application/json')
-        # 错误响应
+        # Error response
         return result
+
 
 @api.route('/v1/models')
 class Models(Resource):
@@ -127,7 +133,7 @@ class Models(Resource):
         """
         Return all active vllm models in OpenAI-compatible format.
         """
-        # 聚合所有激活实例的模型信息
+        # Aggregate model info from all active instances
         instances = instance_manager.list_instances()
         data = []
         for iid, inst in instances.items():
@@ -142,13 +148,14 @@ class Models(Resource):
             })
         return {'object': 'list', 'data': data}, 200
 
+
 @app.route('/health')
 def health_check():
     """
     Health check endpoint. Returns basic service and instance manager status.
     """
     try:
-        # 检查 Flask、实例管理器、子进程数量
+        # Check Flask, instance manager, and subprocess count
         instances = instance_manager.list_instances()
         process_count = len(os.popen('ps -ef | grep vllm.entrypoints.openai.api_server | grep -v grep').readlines())
         return jsonify({
@@ -158,6 +165,7 @@ def health_check():
         }), 200
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
 
 @app.errorhandler(Exception)
 def handle_exception(e):
@@ -171,14 +179,16 @@ def handle_exception(e):
         'trace': traceback.format_exc()
     }), 500
 
-# 后台线程：定时清理失活实例
+
+# Background thread: periodically clean up expired instances
 def cleanup_expired_instances():
     """
     Background thread to periodically clean up expired vllm instances.
     """
     while True:
         instance_manager.cleanup_expired()
-        time.sleep(30)  # 每 30 秒检查一次
+        time.sleep(30)  # Check every 30 seconds
+
 
 def start_cleanup_thread():
     """
@@ -187,10 +197,17 @@ def start_cleanup_thread():
     thread = threading.Thread(target=cleanup_expired_instances, daemon=True)
     thread.start()
 
-# 启动后台线程
+
+# Start background thread
 def main():
+    argparse = ArgumentParser()
+    argparse.add_argument("--host", type=str, default="0.0.0.0")
+    argparse.add_argument("--port", type=int, default=9001)
+    argparse.add_argument("--debug", type=bool, default=True)
+    args = argparse.parse_args()
     start_cleanup_thread()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host=args.host, port=args.port, debug=args.debug)
+
 
 if __name__ == '__main__':
-    main() 
+    main()
