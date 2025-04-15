@@ -3,13 +3,21 @@ import threading
 import time
 from argparse import ArgumentParser
 from flask import Flask, request, Response, jsonify
-from flask_restx import Api, Resource, fields
+from flask_restx import Api, Resource, fields, reqparse
 from instance_manager import InstanceManager
 from router import proxy_openai_request
 
 # Create Flask app and Flask-RESTx API
 app = Flask(__name__)
-api = Api(app, title='vLLM Instance Manager', version='1.0', description='Manage and deploy multiple vLLM model instances')
+api = Api(
+    app, 
+    title='vLLM Instance Manager', 
+    version='1.0', 
+    description='Manage and deploy multiple vLLM model instances',
+    doc='/docs',  # 设置文档路径为 /docs
+    default='vLLM API',  # 设置默认命名空间
+    default_label='vLLM API endpoints'  # 设置默认标签
+)
 
 # Initialize instance manager
 instance_manager = InstanceManager()
@@ -23,15 +31,15 @@ instance_model = api.model('Instance', {
     'timeout': fields.Integer(required=True, description='Timeout in seconds')
 })
 
-# Define request body model for creating instance
-create_instance_model = api.model('CreateInstance', {
-    'model_name': fields.String(required=True, description='Model name'),
-    'timeout': fields.Integer(required=False, description='Timeout in seconds', default=600)
-})
+
+create_instance_parser = reqparse.RequestParser()
+create_instance_parser.add_argument('model_name', type=str, required=True, help='model name')
+create_instance_parser.add_argument('timeout', type=int, required=False, default=600, help='timeout(secend)')
 
 
 @api.route('/instances')
 class InstanceList(Resource):
+    @api.doc("get vllm model instances")
     @api.marshal_with(instance_model, as_list=True)
     def get(self):
         """
@@ -39,14 +47,16 @@ class InstanceList(Resource):
         """
         return list(instance_manager.list_instances().values())
 
-    @api.expect(create_instance_model)
+    @api.doc()
+    @api.expect(create_instance_parser)
+    @api.marshal_with(instance_model)
     def post(self):
         """
         Create and start a new vllm instance.
         """
-        data = request.json
-        model_name = data.get('model_name')
-        timeout = data.get('timeout', 600)
+        args = create_instance_parser.parse_args()
+        model_name = args.get('model_name')
+        timeout = args.get('timeout', 600)
         if not model_name:
             return {'message': 'model_name is required'}, 400
         try:

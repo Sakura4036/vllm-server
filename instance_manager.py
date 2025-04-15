@@ -28,6 +28,9 @@ class VLLMInstance:
         # Start vllm OpenAI-Compatible Server
         cmd = [
             'python', '-m', 'vllm.entrypoints.openai.api_server',
+            '--dtype', 'auto',
+            '--kv-cache-dtype', 'auto',
+            '--trust-remote-code',
             '--model', self.model_name,
             '--port', str(self.port)
         ]
