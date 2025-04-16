@@ -1,8 +1,47 @@
 import subprocess
 import threading
 import time
+import json
+import os
 from typing import Dict, Optional
 from configs import app_config
+
+
+class VLLMConfigManager:
+    def __init__(self):
+        self.config_file = app_config.VLLM_CONFIG
+        self.default_config = {
+            'dtype': app_config.VLLM_DEFAULT_DTYPE,
+            'kv_cache_dtype': app_config.VLLM_DEFAULT_KV_CACHE_DTYPE,
+            'trust_remote_code': app_config.VLLM_DEFAULT_TRUST_REMOTE_CODE,
+        }
+        self.config = self._load_config()
+    
+    def _load_config(self) -> dict:
+        """
+        load from config.json 
+        """
+        if not self.config_file or not os.path.exists(self.config_file):
+            return self.default_config.copy()
+        
+        try:
+            with open(self.config_file, 'r') as f:
+                file_config = json.load(f)
+                merged_config = self.default_config.copy()
+                merged_config.update(file_config)
+                return merged_config
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Loading config error: {self.config_file}: {str(e)}")
+            return self.default_config.copy()
+    
+    def get_config(self) -> dict:
+        return self.config.copy()
+    
+    def get_merged_config(self, user_params: dict = None) -> dict:
+        merged = self.config.copy()
+        if user_params:
+            merged.update(user_params)
+        return merged
 
 
 class VLLMInstance:
@@ -18,6 +57,7 @@ class VLLMInstance:
         self.last_active = time.time()
         self.process: Optional[subprocess.Popen] = None
         self.status = 'starting'  # starting, running, stopped
+        self.instance_id = f"{model_name.replace('/', '_')}_{port}"
 
     def start(self):
         """
@@ -65,7 +105,18 @@ class VLLMInstance:
         Check if the instance has expired (inactive for longer than timeout).
         """
         return (time.time() - self.last_active) > self.timeout
-
+    
+    @property
+    def status_dict(self) -> dict:
+        return {
+            "instance_id": self.instance_id,
+            "model_name": self.model_name,
+            "port": self.port,
+            "status": self.status,
+            "last_active": self.last_active,
+            "timeout": self.timeout,
+            "params": self.params
+        }
 
 class InstanceManager:
     """
@@ -76,6 +127,7 @@ class InstanceManager:
         self.instances: Dict[str, VLLMInstance] = {}  # key: instance_id
         self.lock = threading.Lock()
         self.used_ports = set()
+        self.config_manager = VLLMConfigManager()
 
     def _allocate_port(self) -> int:
         """
@@ -93,20 +145,17 @@ class InstanceManager:
         """
         self.used_ports.discard(port)
 
-    def create_instance(self, model_name: str, params: dict = None, timeout: int = None) -> str:
+    def create_instance(self, model_name: str, params: dict = None, timeout: int = None) -> VLLMInstance:
         """
         Create and start a new vllm instance for the given model and params.
-        Returns the instance_id.
+        Returns the instance object.
         """
         with self.lock:
             port = self._allocate_port()
-            # 合并默认参数和用户参数
-            merged_params = self._get_default_params()
-            if params:
-                merged_params.update(params)
+            merged_params = self.config_manager.get_merged_config(params)
             merged_params['model'] = model_name
             merged_params['port'] = port
-            instance_id = f"{model_name.replace('/', '_')}_{port}"
+            
             instance = VLLMInstance(
                 model_name,
                 port,
@@ -114,18 +163,8 @@ class InstanceManager:
                 timeout or app_config.VLLM_DEFAULT_TIMEOUT
             )
             instance.start()
-            self.instances[instance_id] = instance
-            return instance_id
-
-    def _get_default_params(self) -> dict:
-        """
-        Get default vllm startup params from AppConfig.
-        """
-        return {
-            'dtype': app_config.VLLM_DEFAULT_DTYPE,
-            'kv_cache_dtype': app_config.VLLM_DEFAULT_KV_CACHE_DTYPE,
-            'trust_remote_code': app_config.VLLM_DEFAULT_TRUST_REMOTE_CODE,
-        }
+            self.instances[instance.instance_id] = instance
+            return instance
 
     def get_instance(self, instance_id: str) -> Optional[VLLMInstance]:
         """
@@ -148,14 +187,7 @@ class InstanceManager:
         List all active instances with their status.
         """
         return {
-            iid: {
-                'model_name': inst.model_name,
-                'port': inst.port,
-                'status': inst.status,
-                'last_active': inst.last_active,
-                'timeout': inst.timeout,
-                'params': inst.params
-            }
+            iid: inst.status_dict
             for iid, inst in self.instances.items()
         }
 

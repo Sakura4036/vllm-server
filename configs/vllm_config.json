@@ -1,0 +1,15 @@
+{
+    "dtype": "auto",
+    "kv_cache_dtype": "auto",
+    "quantization": "awq",
+    "max_model_len": 8192,
+    "tensor_parallel_size": 1,
+    "gpu_memory_utilization": 0.9,
+    "trust_remote_code": true,
+    "seed": 42,
+    "swap_space": 4,
+    "disable_log_stats": true,
+    "enforce_eager": false,
+    "max_num_seqs": 256,
+    "max_num_batched_tokens": 16384
+} 
