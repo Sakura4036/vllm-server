@@ -2,10 +2,7 @@ import subprocess
 import threading
 import time
 from typing import Dict, Optional
-
-# Configure available port range
-BASE_PORT = 9000
-MAX_INSTANCES = 20
+from configs import app_config
 
 
 class VLLMInstance:
@@ -13,9 +10,10 @@ class VLLMInstance:
     Class representing a single vllm server instance.
     """
 
-    def __init__(self, model_name: str, port: int, timeout: int = 600):
+    def __init__(self, model_name: str, port: int, params: dict, timeout: int = 600):
         self.model_name = model_name
         self.port = port
+        self.params = params  # All vllm startup params
         self.timeout = timeout  # In seconds
         self.last_active = time.time()
         self.process: Optional[subprocess.Popen] = None
@@ -25,15 +23,21 @@ class VLLMInstance:
         """
         Start the vllm server as a subprocess on the specified port.
         """
-        # Start vllm OpenAI-Compatible Server
+        # Build vllm OpenAI-Compatible Server command
         cmd = [
             'python', '-m', 'vllm.entrypoints.openai.api_server',
-            '--dtype', 'auto',
-            '--kv-cache-dtype', 'auto',
-            '--trust-remote-code',
             '--model', self.model_name,
             '--port', str(self.port)
         ]
+        # Add extra params
+        for k, v in self.params.items():
+            if k in ['model', 'port']:
+                continue
+            if isinstance(v, bool):
+                if v:
+                    cmd.append(f'--{k}')
+            else:
+                cmd.extend([f'--{k.replace("_", "-")}', str(v)])
         self.process = subprocess.Popen(cmd)
         self.status = 'running'
         self.last_active = time.time()
@@ -77,7 +81,7 @@ class InstanceManager:
         """
         Allocate an available port for a new instance.
         """
-        for port in range(BASE_PORT, BASE_PORT + MAX_INSTANCES):
+        for port in range(app_config.VLLM_BASE_PORT, app_config.VLLM_BASE_PORT + app_config.VLLM_MAX_INSTANCES):
             if port not in self.used_ports:
                 self.used_ports.add(port)
                 return port
@@ -89,18 +93,39 @@ class InstanceManager:
         """
         self.used_ports.discard(port)
 
-    def create_instance(self, model_name: str, timeout: int = 600) -> str:
+    def create_instance(self, model_name: str, params: dict = None, timeout: int = None) -> str:
         """
-        Create and start a new vllm instance for the given model.
+        Create and start a new vllm instance for the given model and params.
         Returns the instance_id.
         """
         with self.lock:
             port = self._allocate_port()
+            # 合并默认参数和用户参数
+            merged_params = self._get_default_params()
+            if params:
+                merged_params.update(params)
+            merged_params['model'] = model_name
+            merged_params['port'] = port
             instance_id = f"{model_name.replace('/', '_')}_{port}"
-            instance = VLLMInstance(model_name, port, timeout)
+            instance = VLLMInstance(
+                model_name,
+                port,
+                merged_params,
+                timeout or app_config.VLLM_DEFAULT_TIMEOUT
+            )
             instance.start()
             self.instances[instance_id] = instance
             return instance_id
+
+    def _get_default_params(self) -> dict:
+        """
+        Get default vllm startup params from AppConfig.
+        """
+        return {
+            'dtype': app_config.VLLM_DEFAULT_DTYPE,
+            'kv_cache_dtype': app_config.VLLM_DEFAULT_KV_CACHE_DTYPE,
+            'trust_remote_code': app_config.VLLM_DEFAULT_TRUST_REMOTE_CODE,
+        }
 
     def get_instance(self, instance_id: str) -> Optional[VLLMInstance]:
         """
@@ -128,7 +153,8 @@ class InstanceManager:
                 'port': inst.port,
                 'status': inst.status,
                 'last_active': inst.last_active,
-                'timeout': inst.timeout
+                'timeout': inst.timeout,
+                'params': inst.params
             }
             for iid, inst in self.instances.items()
         }
@@ -140,4 +166,4 @@ class InstanceManager:
         with self.lock:
             expired = [iid for iid, inst in self.instances.items() if inst.is_expired()]
             for iid in expired:
-                self.delete_instance(iid)
+                self.delete_instance(iid) 
