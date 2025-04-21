@@ -63,6 +63,22 @@ class VLLMInstance:
         """
         Start the vllm server as a subprocess on the specified port.
         """
+        # Set up environment variables for HuggingFace
+        env = os.environ.copy()
+        
+        # Configure HuggingFace endpoint if available
+        if app_config.HF_ENDPOINT:
+            env['HF_ENDPOINT'] = app_config.HF_ENDPOINT
+        
+        # Configure HTTP proxy if available
+        if app_config.HTTP_PROXY:
+            env['HTTP_PROXY'] = app_config.HTTP_PROXY
+            env['HTTPS_PROXY'] = app_config.HTTP_PROXY
+        
+        # Configure download cache directory if specified
+        if app_config.HF_HOME:
+            env['HF_HOME'] = app_config.HF_HOME
+        
         # Build vllm OpenAI-Compatible Server command
         cmd = [
             'python', '-m', 'vllm.entrypoints.openai.api_server',
@@ -78,7 +94,9 @@ class VLLMInstance:
                     cmd.append(f'--{k}')
             else:
                 cmd.extend([f'--{k.replace("_", "-")}', str(v)])
-        self.process = subprocess.Popen(cmd)
+                
+        print(f"Starting vLLM instance with command: {' '.join(cmd)}")
+        self.process = subprocess.Popen(cmd, env=env)
         self.status = 'running'
         self.last_active = time.time()
 

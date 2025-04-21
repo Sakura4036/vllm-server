@@ -15,6 +15,9 @@ class AppConfig(BaseSettings):
     VLLM_DEFAULT_TRUST_REMOTE_CODE: bool = Field(default=True, description="Trust remote code for vllm")
     VLLM_DEFAULT_TIMEOUT: int = Field(default=600, description="Default timeout for vllm instance (seconds)")
     VLLM_CONFIG: str | None = Field(default="configs/vllm_config.json", description="Optional vllm config file path")
+    HF_ENDPOINT: str | None = Field(default=None, description="HuggingFace endpoint (mirror or proxy)")
+    HTTP_PROXY: str | None = Field(default=None, description="HTTP/HTTPS proxy for downloading models")
+    HF_HOME: str | None = Field(default=None, description="HuggingFace cache directory, defaults to ~/.cache/huggingface")
 
     class Config:
         env_file = ".env"
