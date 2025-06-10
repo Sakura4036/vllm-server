@@ -1,5 +1,9 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 class AppConfig(BaseSettings):
     """
@@ -18,6 +22,11 @@ class AppConfig(BaseSettings):
     HF_ENDPOINT: str | None = Field(default=None, description="HuggingFace endpoint (mirror or proxy)")
     HTTP_PROXY: str | None = Field(default=None, description="HTTP/HTTPS proxy for downloading models")
     HF_HOME: str | None = Field(default=None, description="HuggingFace cache directory, defaults to ~/.cache/huggingface")
+
+    # Redis configuration
+    REDIS_HOST: str = Field(default="localhost", description="Redis host")
+    REDIS_PORT: int = Field(default=6379, description="Redis port")
+    REDIS_DB: int = Field(default=0, description="Redis database")
 
     class Config:
         env_file = ".env"

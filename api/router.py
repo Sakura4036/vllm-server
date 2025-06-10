@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
-from instance_manager.manager import InstanceManager
+from instance_manager import manager as instance_manager
 from configs import app_config
 import httpx
 from typing import Dict
@@ -13,8 +13,6 @@ from .models import (
 )
 
 router = APIRouter()
-
-instance_manager = InstanceManager()
 
 def get_instance_url(port:int)->str:
     return f"{app_config.APP_HOST}:{port}"
@@ -44,7 +42,7 @@ async def create_instance(data: InstanceCreate):
     if not data.model_name:
         raise HTTPException(400, detail="model_name is required")
     try:
-        instance = instance_manager.create_instance(data.model_name, data.params, data.timeout)
+        instance = await instance_manager.create_instance(data.model_name, data.params, data.timeout)
         return instance.status_dict
     except Exception as e:
         raise HTTPException(500, detail=f"Failed to create instance: {str(e)}")
@@ -113,6 +111,10 @@ async def proxy_to_vllm(instance_id: str, path: str, request: Request):
     inst = instance_manager.get_instance(instance_id)
     if not inst:
         raise HTTPException(404, detail="Instance not found")
+    
+    # Touch the instance to update its last_active time in Redis
+    instance_manager.touch_instance(inst)
+    
     url = f"{get_instance_url(inst.port)}{path}"
     method = request.method
     headers = dict(request.headers)

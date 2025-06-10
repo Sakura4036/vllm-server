@@ -3,3 +3,4 @@ httpx
 uvicorn
 python-dotenv
 vllm
+redis
