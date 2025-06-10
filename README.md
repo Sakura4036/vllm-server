@@ -11,7 +11,8 @@ A multi-instance manager and API proxy for vLLM OpenAI-Compatible Server, suppor
 ## Features
 - Manage multiple vLLM server instances (start/stop/list/auto-expire)
 - Proxy all vLLM OpenAI-Compatible Server APIs (Completions, Embeddings, Re-rank, etc.)
-- Launch vLLM instances with fully customizable parameters (via API or .env)
+- Launch vLLM instances with fully customizable parameters (via API or `.env`)
+- Centralized base configuration for all instances via `vllm_config.json`
 - Environment variable management with `.env` and `python-dotenv`
 - Clear, modular project structure
 
@@ -20,7 +21,7 @@ A multi-instance manager and API proxy for vLLM OpenAI-Compatible Server, suppor
 /instance_manager/manager.py  # vLLM instance management logic
 /api/router.py               # API proxy layer using FastAPI
 /configs/app_config.py       # Configuration management
-/utils/                      # Utility functions
+/configs/vllm_config.json    # Shared base configuration for vLLM instances
 env.example                  # Default configuration
 app.py                       # Application entry point
 ```
@@ -38,6 +39,10 @@ app.py                       # Application entry point
 | VLLM_DEFAULT_TRUST_REMOTE_CODE | Trust remote code               | true      |
 | VLLM_DEFAULT_TIMEOUT        | Instance auto-expire timeout (sec) | 600       |
 | VLLM_CONFIG                 | Optional vLLM config file path     | null      |
+| HF_ENDPOINT                 | HuggingFace endpoint URL           | null      |
+| HTTP_PROXY                  | HTTP proxy for requests            | null      |
+| HTTPS_PROXY                 | HTTPS proxy for requests           | null      |
+| HF_HOME                     | HuggingFace home/cache directory   | null      |
 
 ## Usage
 1. Clone the repo and install requirements:
@@ -62,6 +67,12 @@ curl -X POST http://localhost:5000/instances -H "Content-Type: application/json"
 curl http://localhost:5000/instances
 ```
 
+### Getting a specific instance
+```bash
+# First get your instance_id from the /instances endpoint
+curl http://localhost:5000/instances/{instance_id}
+```
+
 ### Using the OpenAI-Compatible API
 ```bash
 # First get your instance_id from the /instances endpoint
@@ -73,8 +84,15 @@ curl -X POST http://localhost:5000/proxy/{instance_id}/v1/completions \
 ## API Endpoints
 - `POST /instances` - Create a new vLLM instance
 - `GET /instances` - List all active instances
+- `GET /instances/{instance_id}` - Get details of a specific instance
 - `DELETE /instances/{instance_id}` - Delete an instance
 - `ANY /proxy/{instance_id}/{path}` - Proxy any request to a specific instance
+
+## Future Plans (TODO)
+- **Background Cleanup Task**: Implement a background task using FastAPI's `lifespan` to automatically clean up expired instances.
+- **Persistent State Management**: Use an external service like Redis to manage instance states, making the application stateless and scalable.
+- **Instance Health Checks**: Add a health check mechanism to ensure an instance is fully operational before marking it as 'running'.
+- **Async Process Management**: Refactor process handling from `subprocess` to `asyncio.create_subprocess_exec` for better performance and alignment with the async framework.
 
 ---
 
